@@ -1,0 +1,17 @@
+{
+  "name": "three-rubiks-cube",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "start": "parcel src/index.html"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "three": "^0.137.5"
+  },
+  "devDependencies": {
+    "@types/three": "^0.137.0"
+  }
+}
