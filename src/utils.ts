@@ -54,3 +54,15 @@ export function normalizeScreenPos(x: number, y: number) : THREE.Vector2 {
         return vec2;
 
 }
+
+export function radToDeg(x: number, snap: boolean){
+    let calc = 360/( Math.PI*2 ) * x;
+    if(snap){
+        return Math.floor(calc/5.625)*5.625;
+    }
+    return calc;
+}
+
+export function degToRad(x: number){
+    return ( Math.PI/180 )*x;
+}

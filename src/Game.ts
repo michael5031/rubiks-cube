@@ -19,11 +19,13 @@ export class Game{
     mouseY: number;
     mouseDown: boolean;
 
+    doingRaycast: boolean;
+
     constructor(){
         this.scene = new THREE.Scene();
         this.renderer = new THREE.WebGLRenderer({antialias: true});
         this.renderer.setSize(window.innerWidth, window.innerHeight);
-        this.renderer.setClearColor( 0x101015, 1);
+        this.renderer.setClearColor( 0x101014, 1);
 
         this.domElement = document.getElementById("three");
         this.domElement.appendChild(this.renderer.domElement);
@@ -46,19 +48,37 @@ export class Game{
         this.mouseY = 0;
         this.mouseDown = false;
 
-        // this.orbitControls.enabled = false;
+        this.doingRaycast = false;
+
         this.domElement.addEventListener("pointermove", (event)=>{
             if(!this.mouseDown) return;
             this.rubiksCube.raycastUpdate(event.clientX, event.clientY);
         } );
 
-        this.domElement.addEventListener("mousedown",(event) => {
+        this.domElement.addEventListener("pointerdown",(event) => {
             this.mouseDown = true; 
-            this.rubiksCube.raycastInitial(event.clientX, event.clientY);
+
+            this.doingRaycast = this.rubiksCube.raycastInitial(event.clientX, event.clientY);
+            if(!this.doingRaycast){
+                this.mouseDown = false;
+            }else{
+                this.orbitControls.enabled = false;
+            }
         } ); 
         this.domElement.addEventListener("mouseup",(event) => {
             this.mouseDown = false; 
+            this.orbitControls.enabled = true;
+            if(this.doingRaycast){
+                this.rubiksCube.raycastEnd();
+                this.doingRaycast = false;
+            }
         } ); 
+        window.addEventListener("resize", () => {
+            this.camera.aspect = window.innerWidth / window.innerHeight;
+            this.camera.updateProjectionMatrix();
+
+            this.renderer.setSize(window.innerWidth, window.innerHeight);
+        })
 
     }
 
