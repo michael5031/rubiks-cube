@@ -1,8 +1,9 @@
 import * as THREE from "three";
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
-import {coordinateToString, sides, canvasRoundedRect, normalizeScreenPos, radToDeg, degToRad} from "./utils";
+import {coordinateToString, sides, canvasRoundedRect, normalizeScreenPos, radToDeg, degToRad, setCursor} from "./utils";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls";
 import { BoxGeometry } from "three";
+import anime from "animejs/lib/anime.es.js";
 
 type side = "up" | "down" | "left" | "right" | "front" | "back" ;
 type sideBackground = "up" | "down" | "left" | "right" | "front" | "back" | "background";
@@ -28,6 +29,14 @@ type sideMaterials = {
 
     background: THREE.Material;
 };
+
+export type configType = {
+    cubeType?: number,
+    rotationAnimationDurationMultiplier?: number,
+    rotationAnimationType?: "elastic" | "linear" | "ease"
+};
+
+type rotationAxis = "x" | "y" | "z";
 
 export class RubiksCube{
     cubes: any; //map<string, mesh> "0:1:0"
@@ -68,35 +77,65 @@ export class RubiksCube{
     dragRotationX: number;
     startedRotationX: number;
 
-   tempGroupEdgy: THREE.Group;
-   tempGroup: THREE.Group;
+    tempGroupEdgy: THREE.Group;
+    tempGroup: THREE.Group;
 
-   tempGroupArray: THREE.Mesh[];
-   tempGroupEdgyArray: THREE.Mesh[];
+    tempGroupArray: THREE.Mesh[];
+    tempGroupEdgyArray: THREE.Mesh[];
 
-   rotationAxis:string;  
+    rotationAxis: rotationAxis;  
 
-   calledUpdate: boolean;
+    calledUpdate: boolean;
 
-   geometry: any;
-   geometryEdgy: THREE.BoxGeometry;
+    geometry: any;
+    geometryEdgy: THREE.BoxGeometry;
+
+    automaticRotationStartAngle: number;
+    automaticRotationEndAngle: number;
+    deltaTimeStart: number;
+    animationObject: {animationAmount: number};
+    inFinishAnimation: boolean;
+
+    defaultConfig: configType;
+    config: configType;
+
     
-    constructor(scene: THREE.Scene, camera: THREE.Camera){
+    setConfig(config: configType){
+        let tempConfig:configType = {};
+        let oldconfig = this.config;
+        Object.keys(this.defaultConfig).forEach((key) => {
+            if(config[key] != undefined){
+                tempConfig[key] = config[key];
+            } 
+            else{
+                tempConfig[key] = this.defaultConfig[key];
+            }
+        });
+        this.config = tempConfig;
+        if(tempConfig.cubeType != oldconfig.cubeType){
+            this.scene.clear();
+            this.init(this.scene, this.camera);
+            this.generateMaterials();
+            this.generateCubes();
+        }
+    }
+
+    init(scene: THREE.Scene, camera: THREE.Camera){
         this.scene = scene;
         this.camera = camera;
 
 
-        this.cubeType = 3;
+        this.cubeType = this.config.cubeType;
 
-        this.sideColors = {
+         this.sideColors = {
             up:"#ffffff",
-            down: "#ffff00",
-            left: "#ff6600",
+            down: "#ffdd00",
+            left: "#dd4400",
             right: "#dd0000",
-            front: "#30bb10",
+            front: "#33bb10",
             back: "#2233cc",
             background: "#020202",
-        }
+        } 
         //nord
         /* this.sideColors = { 
             up:"#DBDEE9",
@@ -106,8 +145,8 @@ export class RubiksCube{
             front: "#8FBCBB",
             back: "#91A1C1",
             background: "#434C5E",
-        }
-        */
+        } */
+       
         /* this.sideColors = { 
             up: "#fafafa",
             down: "#fdcc60",
@@ -160,8 +199,51 @@ export class RubiksCube{
         this.raycaster = new THREE.Raycaster();
         this.dragPoint = new THREE.Vector3();
 
-        this.geometry = new RoundedBoxGeometry(1, 1, 1, 5, this.cubeRoundedAmount);
+        this.geometry = new RoundedBoxGeometry(1, 1, 1, 4, this.cubeRoundedAmount);
         this.geometryEdgy = new BoxGeometry();
+
+       this.automaticRotationStartAngle = 0;
+       this.automaticRotationEndAngle = 0;
+
+       this.animationObject = {animationAmount: 0};
+       this.inFinishAnimation = false;
+
+
+    }
+
+    constructor(scene: THREE.Scene, camera: THREE.Camera, config?: configType){
+        this.config = {};
+        this.defaultConfig = {
+            cubeType: 3,
+            rotationAnimationType: "ease",
+            rotationAnimationDurationMultiplier: 1,
+        };
+        Object.keys(this.defaultConfig).forEach((key) => {
+            if(config[key] != undefined){
+                this.config[key] = config[key];
+            } 
+            else{
+                this.config[key] = this.defaultConfig[key];
+            }
+        });
+
+        this.init(scene, camera);
+        this.generateMaterials();
+        this.generateCubes();
+
+
+        this.cubesGroup.scale.set(0,0,0);
+        // this.cubesGroup.scale.set(1,1,1);
+
+
+        anime({
+            targets: this.cubesGroup.scale,
+            x: 1,
+            y: 1,
+            z: 1,
+            easing: "easeOutExpo",
+            duration: 1000,
+        });
 
     }
     generateMaterials(){
@@ -179,6 +261,9 @@ export class RubiksCube{
             }else{
                 ctx.fillRect(this.faceInsetPixels, this.faceInsetPixels, this.facePixelsSize-this.faceInsetPixels*2, this.facePixelsSize-this.faceInsetPixels*2);
             }
+
+            /* ctx.fillStyle = this.sideColors.background;
+            ctx.fillRect(this.faceInsetPixels*2, this.faceInsetPixels*2, ( this.facePixelsSize-this.faceInsetPixels*4 ), ( this.facePixelsSize-this.faceInsetPixels*4 )); */
 
             let canvasTexture = new THREE.CanvasTexture(canvas);
             this.sideMaterials[value] = new THREE.MeshBasicMaterial({map: canvasTexture});
@@ -276,16 +361,13 @@ export class RubiksCube{
     }
 
     adjustCamera(camera: THREE.Camera, orbitControls: OrbitControls){
-        camera.position.set(this.cubeType+1,this.cubeType+1,this.cubeType+1);
+        camera.position.set(this.cubeType+1.5,this.cubeType+1.5,this.cubeType+1.5);
         orbitControls.update();
 
     }
-    rotate(x, y){
-        this.cubesGroup.rotation.x += x / 100;
-        this.cubesGroup.rotation.y += y / 100;
-    }
 
     raycastInitial(x: number, y: number): boolean{
+        if(this.inFinishAnimation) return false;
 
         let vec2 = normalizeScreenPos(x, y);
         this.raycaster.setFromCamera(vec2, this.camera);
@@ -379,7 +461,6 @@ export class RubiksCube{
 
            this.scene.add(this.dragPlane);
            this.dragPlane.visible = false;
-           // console.log(this.dragIntersection);
 
 
 
@@ -429,63 +510,21 @@ export class RubiksCube{
         }
 
 
-       this.tempGroupEdgy = new THREE.Group();
-       this.tempGroup = new THREE.Group();
-       let originOffset = ( this.cubeType/2 ) - 0.5;
-       let offsetVector:THREE.Vector3 = new THREE.Vector3();
-       if(this.rotationAxis == "x"){
-           offsetVector = new THREE.Vector3(0, originOffset, originOffset);
-       }
-       else if(this.rotationAxis == "y"){
-           offsetVector = new THREE.Vector3(originOffset, 0, originOffset);
-       }
-       else if(this.rotationAxis == "z"){
-           offsetVector = new THREE.Vector3(originOffset, originOffset, 0);
-       }
-       for(let x = 0; x < this.cubeType; x++){
-           for(let y = 0; y < this.cubeType; y++){
-                   const dx = this.dragIntersection.object.position.x;
-                   const dy = this.dragIntersection.object.position.y;
-                   const dz = this.dragIntersection.object.position.z;
-                   let coordinatePosition:string;
-                   if(this.rotationAxis == "x"){
-                       coordinatePosition = coordinateToString(Math.round(dx), x, y);
-                   }
-                   else if(this.rotationAxis == "y"){
-                       coordinatePosition = coordinateToString(x, Math.round(dy), y);
-                   }
-                   else if(this.rotationAxis == "z"){
-                       coordinatePosition = coordinateToString(x, y, Math.round(dz));
-                   }
-                   if(this.cubes.get(coordinatePosition) == undefined){
-                       continue;
-                   }
-                    let cu = this.cubes.get(coordinatePosition);
-                    this.tempGroup.add(cu);
-                    this.tempGroupArray.push(cu);
-                    cu.position.set(Math.round( cu.position.x )-offsetVector.x, Math.round( cu.position.y )-offsetVector.y, Math.round( cu.position.z )-offsetVector.z);
+        let amount = 0;
+        if(this.rotationAxis == "x"){
+            amount = this.dragIntersection.object.position.x;
+        }
+        else if(this.rotationAxis == "y"){
+            amount = this.dragIntersection.object.position.y;
+        }
+        else if(this.rotationAxis == "z"){
+            amount = this.dragIntersection.object.position.z;
+        }
 
-                    let cuEdgy = this.cubesEdgy.get(coordinatePosition);
-                    this.tempGroupEdgy.add(cuEdgy);
-                    this.tempGroupEdgyArray.push(cuEdgy);
-                    cuEdgy.position.set(Math.round( cuEdgy.position.x )-offsetVector.x, Math.round( cuEdgy.position.y )-offsetVector.y, Math.round( cuEdgy.position.z )-offsetVector.z);
-               }
-
-       }
-       this.scene.add(this.tempGroup);
-       this.scene.add(this.tempGroupEdgy);
-       this.tempGroupEdgy.visible = false;
-       let newPos = new THREE.Vector3(Math.round( this.cubesGroup.position.x )+offsetVector.x, Math.round( this.cubesGroup.position.y )+offsetVector.y, Math.round( this.cubesGroup.position.z )+offsetVector.z);
-       this.tempGroup.position.copy(newPos);
-       this.tempGroupEdgy.position.copy(newPos);
-
-       this.dragObject = this.tempGroupEdgy as any;
-
-       this.startedRotationX = this.dragObject.rotation.x;
-
+        this.rotateSideStart(this.rotationAxis, amount);
+        setCursor("grabbing");
     }
     raycastUpdate(x: number, y:number){
-        this.calledUpdate = true;
         let vec2 = normalizeScreenPos(x, y);
         this.raycaster.setFromCamera(vec2, this.camera);
 
@@ -567,10 +606,135 @@ export class RubiksCube{
         }
 
     }
-    raycastEnd(){
-        // if(this.calledUpdate == false){
-            // return;
-        // }
+    
+    raycastEnd(deltaTimeStart: number){
+       this.deltaTimeStart = deltaTimeStart;
+       setCursor("grab");
+       this.automaticRotationStartAngle = this.tempGroup.rotation[this.rotationAxis];
+       this.automaticRotationEndAngle = this.rotationEndRotation();
+
+       let absDistance = Math.abs(this.automaticRotationEndAngle - this.automaticRotationStartAngle);
+
+       this.animationObject = {animationAmount: 0};
+       this.inFinishAnimation = true;
+
+       let easeMode = "";
+       let easeDurationMultiplier = 1;
+       switch(this.config.rotationAnimationType){
+           case "elastic":
+               easeMode = "easeOutElastic(1, .6)";
+               easeDurationMultiplier = 2;
+               break;
+           case "linear":
+               easeMode = "linear";
+               break;
+           case "ease":
+               easeMode = "easeOutCubic";
+               break;
+           default: 
+               easeMode = "easeOutCubic";
+               break;
+       }
+       anime({
+           targets: this.animationObject,
+           animationAmount: 1,
+           round: 100,
+           duration: 200*absDistance*easeDurationMultiplier*this.config.rotationAnimationDurationMultiplier,
+           easing: easeMode,
+           update: function(){
+                this.rotationUpdate(this.animationObject.animationAmount);
+           }.bind(this),
+
+           complete: function() {
+               this.rotationEnd();
+               this.inFinishAnimation = false;
+           }.bind(this)
+       });
+    }
+
+    raycastHit(x: number, y:number){
+        let vec2 = normalizeScreenPos(x, y);
+        this.raycaster.setFromCamera(vec2, this.camera);
+
+        const intersect = this.raycaster.intersectObjects(this.cubesEdgyGroup.children);
+        if(intersect.length > 0){
+            setCursor("grab");        
+            return;
+        }
+        setCursor("default");
+    }
+
+
+    rotateSideStart(axis: rotationAxis, positionIn: number){
+        
+       this.rotationAxis = axis;
+       this.tempGroupEdgy = new THREE.Group();
+       this.tempGroup = new THREE.Group();
+       let originOffset = ( this.cubeType/2 ) - 0.5;
+       // let originOffset = 0.5;
+       let offsetVector:THREE.Vector3 = new THREE.Vector3();
+       if(this.rotationAxis == "x"){
+           offsetVector = new THREE.Vector3(0, originOffset, originOffset);
+       }
+       else if(this.rotationAxis == "y"){
+           offsetVector = new THREE.Vector3(originOffset, 0, originOffset);
+       }
+       else if(this.rotationAxis == "z"){
+           offsetVector = new THREE.Vector3(originOffset, originOffset, 0);
+       }
+       for(let x = 0; x < this.cubeType; x++){
+           for(let y = 0; y < this.cubeType; y++){
+                   let coordinatePosition:string;
+                   if(this.rotationAxis == "x"){
+                       coordinatePosition = coordinateToString(Math.round(positionIn), x, y);
+                   }
+                   else if(this.rotationAxis == "y"){
+                       coordinatePosition = coordinateToString(x, Math.round(positionIn), y);
+                   }
+                   else if(this.rotationAxis == "z"){
+                       coordinatePosition = coordinateToString(x, y, Math.round(positionIn));
+                   }
+                   if(this.cubes.get(coordinatePosition) == undefined){
+                       continue;
+                   }
+                    let cu = this.cubes.get(coordinatePosition);
+                    this.tempGroup.add(cu);
+                    this.tempGroupArray.push(cu);
+                    cu.position.set(Math.round( cu.position.x )-offsetVector.x, Math.round( cu.position.y )-offsetVector.y, Math.round( cu.position.z )-offsetVector.z);
+
+                    let cuEdgy = this.cubesEdgy.get(coordinatePosition);
+                    this.tempGroupEdgy.add(cuEdgy);
+                    this.tempGroupEdgyArray.push(cuEdgy);
+                    cuEdgy.position.set(Math.round( cuEdgy.position.x )-offsetVector.x, Math.round( cuEdgy.position.y )-offsetVector.y, Math.round( cuEdgy.position.z )-offsetVector.z);
+
+               }
+
+       }
+       this.scene.add(this.tempGroup);
+       this.scene.add(this.tempGroupEdgy);
+       this.tempGroupEdgy.visible = false;
+       let newPos = new THREE.Vector3(( this.cubesGroup.position.x )+offsetVector.x, ( this.cubesGroup.position.y )+offsetVector.y, ( this.cubesGroup.position.z )+offsetVector.z);
+       this.tempGroup.position.copy(newPos);
+       this.tempGroupEdgy.position.copy(newPos);
+
+       this.dragObject = this.tempGroupEdgy as any;
+
+       this.startedRotationX = this.dragObject.rotation.x;
+    }
+    rotationUpdate(amount: number){ //returns true when amount is 1 or higher
+        let distance = this.automaticRotationEndAngle - this.automaticRotationStartAngle;
+        this.tempGroup.rotation[this.rotationAxis] = this.automaticRotationStartAngle + (distance * amount);
+        this.tempGroupEdgy.rotation[this.rotationAxis] = this.tempGroup.rotation[this.rotationAxis];
+        
+
+    }
+
+    rotationEndRotation(): number{
+        let rotation:number = radToDeg( this.tempGroup.rotation[this.rotationAxis], true);
+        return degToRad( Math.floor( ( rotation+45 )/90 ) * 90 );
+    }
+
+    rotationEnd(){
         let rotation:number = radToDeg( this.tempGroup.rotation[this.rotationAxis], true);
         this.tempGroup.rotation[this.rotationAxis] = degToRad( Math.floor( ( rotation+45 )/90 ) * 90 );
         this.tempGroupEdgy.rotation[this.rotationAxis] = degToRad( Math.floor(( rotation+45 )/90) * 90 );
@@ -593,6 +757,5 @@ export class RubiksCube{
         }
         this.tempGroupEdgy = undefined;
         this.tempGroup = undefined;
-        this.calledUpdate = false;
     }
 }

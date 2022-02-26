@@ -66,3 +66,8 @@ export function radToDeg(x: number, snap: boolean){
 export function degToRad(x: number){
     return ( Math.PI/180 )*x;
 }
+
+export function setCursor(cursorName: string){
+    document.body.style.cursor = cursorName;
+
+};

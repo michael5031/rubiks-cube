@@ -9,6 +9,7 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
+    "animejs": "^3.2.1",
     "three": "^0.137.5"
   },
   "devDependencies": {

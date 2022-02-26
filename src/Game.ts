@@ -21,6 +21,12 @@ export class Game{
 
     doingRaycast: boolean;
 
+    deltaClock: THREE.Clock;
+    deltaTime: number;
+    passedTime: number;
+
+    shouldFinishRotation: boolean;
+
     constructor(){
         this.scene = new THREE.Scene();
         this.renderer = new THREE.WebGLRenderer({antialias: true});
@@ -35,13 +41,14 @@ export class Game{
 
         this.orbitControls = new OrbitControls(this.camera, this.domElement);
         this.orbitControls.enableDamping = true;
-        this.orbitControls.dampingFactor = 0.2;
+        this.orbitControls.dampingFactor = 0.15;
         this.orbitControls.enablePan = false;
         this.orbitControls.update();
 
-        this.rubiksCube = new RubiksCube(this.scene, this.camera);
-        this.rubiksCube.generateMaterials();
-        this.rubiksCube.generateCubes();
+        this.rubiksCube = new RubiksCube(this.scene, this.camera, {
+            cubeType: 3,
+            rotationAnimationDurationMultiplier: 1,
+        });
         this.rubiksCube.adjustCamera(this.camera, this.orbitControls);
 
         this.mouseX = 0;
@@ -50,8 +57,13 @@ export class Game{
 
         this.doingRaycast = false;
 
+        this.shouldFinishRotation = false;
+
         this.domElement.addEventListener("pointermove", (event)=>{
-            if(!this.mouseDown) return;
+            if(!this.mouseDown){
+                this.rubiksCube.raycastHit(event.clientX, event.clientY);
+                return;
+            }
             this.rubiksCube.raycastUpdate(event.clientX, event.clientY);
         } );
 
@@ -65,11 +77,12 @@ export class Game{
                 this.orbitControls.enabled = false;
             }
         } ); 
-        this.domElement.addEventListener("mouseup",(event) => {
+        this.domElement.addEventListener("pointerup",(event) => {
             this.mouseDown = false; 
             this.orbitControls.enabled = true;
             if(this.doingRaycast){
-                this.rubiksCube.raycastEnd();
+                this.rubiksCube.raycastEnd(this.passedTime);
+                this.shouldFinishRotation = true;
                 this.doingRaycast = false;
             }
         } ); 
@@ -80,10 +93,22 @@ export class Game{
             this.renderer.setSize(window.innerWidth, window.innerHeight);
         })
 
+        this.deltaClock = new THREE.Clock();
+        this.deltaTime = 0;
+        this.passedTime = 0;
+
     }
 
-    render(){
+    render(passedTime: number){
         requestAnimationFrame(this.render.bind(this));
+        this.passedTime = passedTime;
+        this.deltaTime = this.deltaClock.getDelta();
+
+        /* if(this.shouldFinishRotation){
+            if(this.rubiksCube.raycastEndUpdate(this.passedTime)){
+                this.shouldFinishRotation = false;
+            }
+        } */
 
         this.orbitControls.update();
         this.renderer.render(this.scene, this.camera);
