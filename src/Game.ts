@@ -47,6 +47,7 @@ export class Game{
 
         this.rubiksCube = new RubiksCube(this.scene, this.camera, {
             cubeType: 3,
+            rotationAnimationType: "ease",
             rotationAnimationDurationMultiplier: 1,
         });
         this.rubiksCube.adjustCamera(this.camera, this.orbitControls);
